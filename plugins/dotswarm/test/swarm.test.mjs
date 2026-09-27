@@ -431,6 +431,44 @@ test('with allowed_paths the result lists every changed path outside them, as gi
   assert.equal((await unscoped.result()).git.outsideAllowedPaths, undefined, 'no allowed_paths, no scope list');
 });
 
+function repoWithApp() {
+  const repo = tempGitRepo();
+  fs.mkdirSync(path.join(repo, 'app', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'app', 'src', 'a.js'), 'a\n');
+  execFileSync('git', ['add', '.'], { cwd: repo });
+  execFileSync('git', ['commit', '-q', '-m', 'app'], { cwd: repo });
+  return repo;
+}
+
+test('a subdirectory workspace sweeps only itself, with paths and allowed_paths relative to it', async (t) => {
+  const repo = repoWithApp();
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'Edit app', workspace: path.join(repo, 'app'), isolate: false, max_agents: 1, allowed_paths: ['src'] });
+  await swarm.waitForAttention(5000);
+  fs.mkdirSync(path.join(repo, 'other'));
+  fs.writeFileSync(path.join(repo, 'other', 'sibling.txt'), 'another process\n');
+  fs.writeFileSync(path.join(repo, 'app', 'src', 'new.js'), 'new\n');
+  fs.writeFileSync(path.join(repo, 'app', 'stray.txt'), 'x\n');
+  const { git } = await swarm.result();
+  assert.deepEqual(git.newUntracked, ['src/new.js', 'stray.txt'], 'a sibling directory is not the team\'s');
+  assert.deepEqual(git.outsideAllowedPaths, ['stray.txt']);
+});
+
+test('an isolated subdirectory workspace resolves allowed_paths inside the same subdirectory of the worktree', async (t) => {
+  const repo = repoWithApp();
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'Edit app', workspace: path.join(repo, 'app'), max_agents: 1, allowed_paths: ['src'] });
+  assert.ok(swarm.branch, 'isolated');
+  await swarm.waitForAttention(5000);
+  fs.writeFileSync(path.join(swarm.workspace, 'app', 'src', 'a.js'), 'changed\n');
+  fs.writeFileSync(path.join(swarm.workspace, 'app', 'notes.md'), 'x\n');
+  const { git } = await swarm.result();
+  assert.deepEqual(git.outsideAllowedPaths, ['notes.md']);
+  assert.deepEqual(git.newUntracked, ['notes.md']);
+});
+
 test('owner questions come back complete, numbered, and only from this run', async (t) => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-ws-'));
   const manager = new SwarmManager({ launch: fakeLaunch('normal') });

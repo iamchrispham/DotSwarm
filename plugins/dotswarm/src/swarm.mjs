@@ -121,14 +121,14 @@ const splitZ = (out) => out.split('\0').filter(Boolean);
 
 /**
  * Untracked files, and ignored entries as git collapses them (a whole ignored directory is one
- * entry), across the repository. ponytail: a file added inside an ignored directory that existed
- * at the start is not seen; listing ignored files one by one would walk every node_modules.
+ * entry), under cwd and relative to it. ponytail: a file added inside an ignored directory that
+ * existed at the start is not seen; listing ignored files one by one would walk every node_modules.
  */
 async function untrackedAndIgnored(cwd) {
-  const others = ['ls-files', '-z', '--others', '--exclude-standard', '--full-name'];
+  const others = ['ls-files', '-z', '--others', '--exclude-standard'];
   return {
-    untracked: splitZ(await git(cwd, [...others, '--', ':/'])),
-    ignored: splitZ(await git(cwd, [...others, '--ignored', '--directory', '--', ':/'])),
+    untracked: splitZ(await git(cwd, others)),
+    ignored: splitZ(await git(cwd, [...others, '--ignored', '--directory'])),
   };
 }
 
@@ -142,15 +142,14 @@ async function headCommit(cwd) {
 }
 
 /**
- * Paths changed since the start commit (committed, staged, or not) plus untracked files, limited
- * to the pathspecs when given. Paths are relative to the repository root, as git prints them.
+ * Paths under cwd changed since the start commit (committed, staged, or not) plus untracked
+ * files, relative to cwd and limited to the pathspecs (also relative to cwd) when given.
  */
-async function changedPaths(cwd, head, pathspecs = [':/']) {
-  const spec = ['--', ...pathspecs];
-  const tracked = head
-    ? [['diff', '-z', '--name-only', '--no-renames', head, ...spec]]
-    : [['diff', '-z', '--name-only', '--no-renames', '--cached', ...spec], ['diff', '-z', '--name-only', '--no-renames', ...spec]];
-  const lists = await Promise.all([...tracked, ['ls-files', '-z', '--others', '--exclude-standard', '--full-name', ...spec]].map((args) => git(cwd, args)));
+async function changedPaths(cwd, head, pathspecs = []) {
+  const spec = pathspecs.length ? ['--', ...pathspecs] : [];
+  const diff = ['diff', '-z', '--name-only', '--no-renames', '--relative'];
+  const tracked = head ? [[...diff, head, ...spec]] : [[...diff, '--cached', ...spec], [...diff, ...spec]];
+  const lists = await Promise.all([...tracked, ['ls-files', '-z', '--others', '--exclude-standard', ...spec]].map((args) => git(cwd, args)));
   return new Set(lists.flatMap(splitZ));
 }
 
@@ -222,6 +221,8 @@ export class Swarm {
     this.workspace = spec.workspace;
     this.branch = null;
     this.launch = launch ?? defaultLaunch;
+    // The directory the coordinator named, inside an isolated worktree; the sweep covers only it.
+    this.scopeDir = null;
     this.#log = null;
     this.owner = null;
   }
@@ -375,8 +376,11 @@ export class Swarm {
     if (!(await isGitRepo(this.spec.workspace))) throw new Error('isolate requires the workspace to be a git repository');
     const worktree = path.join(workDir(), 'worktrees', this.id);
     this.branch = `swarm/${this.id}`;
+    const prefix = await git(this.spec.workspace, ['rev-parse', '--show-prefix']);
     await git(this.spec.workspace, ['worktree', 'add', '-b', this.branch, worktree, 'HEAD']);
     this.workspace = worktree;
+    const scope = path.join(worktree, prefix);
+    if (prefix && fs.existsSync(scope)) this.scopeDir = scope;
   }
 
   /**
@@ -443,9 +447,10 @@ export class Swarm {
       fs.copyFileSync(inherited, file);
       return;
     }
-    if (!(await isGitRepo(this.workspace))) return;
+    const dir = this.scopeDir ?? this.workspace;
+    if (!(await isGitRepo(dir))) return;
     try {
-      fs.writeFileSync(file, JSON.stringify({ head: await headCommit(this.workspace), ...(await untrackedAndIgnored(this.workspace)) }));
+      fs.writeFileSync(file, JSON.stringify({ dir, head: await headCommit(dir), ...(await untrackedAndIgnored(dir)) }));
     } catch { /* no baseline, no sweep */ }
   }
 
@@ -456,17 +461,18 @@ export class Swarm {
   async #workspaceSweep() {
     const baseline = readJson(path.join(this.dir, BASELINE_FILE));
     if (!baseline) return {};
+    const dir = baseline.dir ?? this.workspace;
     const sweep = {};
     try {
-      const now = await untrackedAndIgnored(this.workspace);
+      const now = await untrackedAndIgnored(dir);
       Object.assign(sweep, { newUntracked: newSince(baseline.untracked, now.untracked), newIgnored: newSince(baseline.ignored, now.ignored) });
     } catch (error) {
       sweep.sweepError = error.message;
     }
     if (this.spec.allowedPaths?.length) {
       try {
-        const inside = await changedPaths(this.workspace, baseline.head, this.spec.allowedPaths);
-        sweep.outsideAllowedPaths = newSince([...inside], [...(await changedPaths(this.workspace, baseline.head))]);
+        const inside = await changedPaths(dir, baseline.head, this.spec.allowedPaths);
+        sweep.outsideAllowedPaths = newSince([...inside], [...(await changedPaths(dir, baseline.head))]);
       } catch (error) {
         sweep.scopeError = error.message;
       }
