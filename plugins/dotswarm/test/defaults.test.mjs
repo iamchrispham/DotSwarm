@@ -41,6 +41,8 @@ test('swarm_start and swarm_doctor report the effective defaults', async () => {
   try {
     const start = (await client.listTools()).tools.find((t) => t.name === 'swarm_start');
     assert.match(start.inputSchema.properties.model.description, /default vendor\/model-1; design swarms default to vendor\/vision-1/);
+    const status = (await client.listTools()).tools.find((t) => t.name === 'swarm_status');
+    assert.match(status.description, /Read failure\.providerError first/, 'a 400 is not always the model');
     const doctor = JSON.parse((await client.callTool({ name: 'swarm_doctor', arguments: {} })).content[0].text);
     assert.equal(doctor.defaults.model, 'vendor/model-1');
     assert.equal(doctor.defaults.provider, 'hosted-provider');
