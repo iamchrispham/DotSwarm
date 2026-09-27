@@ -73,3 +73,35 @@ test('with a DotBot client and key the coordinator gets skill search and a skill
     await client.close();
   }
 });
+
+test('swarm_start over MCP takes the objective from a file, backslashes and all', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-server-file-'));
+  const briefFile = path.join(home, 'brief.md');
+  const brief = 'Match `\\(` and `\\*` literally; keep "quotes".';
+  fs.writeFileSync(briefFile, brief);
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(ROOT, 'server.mjs')],
+    env: {
+      ...process.env,
+      DOTSWARM_HOME: home,
+      CODEX_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-server-file-home-')),
+      DOTSWARM_DSH_BIN: fileURLToPath(new URL('./fixtures/fake-dsh.mjs', import.meta.url)),
+      DEEPSEEK_API_KEY: 'test-key',
+      DOTSWARM_DOTBOT_CLIENT: '',
+      DOTBOT_API_KEY: '',
+    },
+  });
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(transport);
+  try {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-server-file-ws-'));
+    const started = await client.callTool({ name: 'swarm_start', arguments: { objective_file: briefFile, workspace, max_agents: 1 } });
+    assert.notEqual(started.isError, true, started.content[0].text);
+    const { swarmId } = JSON.parse(started.content[0].text);
+    assert.ok(fs.readFileSync(path.join(home, 'swarms', swarmId, 'lead-prompt.md'), 'utf8').includes(brief));
+    await client.callTool({ name: 'swarm_stop', arguments: { swarm_id: swarmId } });
+  } finally {
+    await client.close();
+  }
+});
