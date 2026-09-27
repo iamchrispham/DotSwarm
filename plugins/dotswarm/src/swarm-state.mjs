@@ -42,6 +42,7 @@ export class SwarmState extends EventEmitter {
     this.lastRootTurnEnd = null;
     // The error that ended the Lead's latest turn, until the Lead starts another turn.
     this.leadTurnError = null;
+    this.leadTurnFailure = null; // the same error as the provider reported it
     this.#session(rootSessionId).name = 'lead';
     this.#session(rootSessionId).role = 'lead';
   }
@@ -71,7 +72,7 @@ export class SwarmState extends EventEmitter {
       s.status = params.status;
       if (params.sessionId === this.rootSessionId) {
         this.rootStatus = params.status;
-        if (params.status === 'running') this.leadTurnError = null;
+        if (params.status === 'running') { this.leadTurnError = null; this.leadTurnFailure = null; }
       }
       significant = true;
     } else if (method === 'subagent.started') {
@@ -161,6 +162,7 @@ export class SwarmState extends EventEmitter {
         if (sessionId === this.rootSessionId) {
           this.lastRootTurnEnd = data.reason?.kind ?? null;
           this.leadTurnError = data.reason?.kind === 'error' ? describeTurnError(data.turn, data.reason.error) : null;
+          this.leadTurnFailure = data.reason?.kind === 'error' ? (data.reason.error ?? {}) : null;
         }
         return true;
       default:

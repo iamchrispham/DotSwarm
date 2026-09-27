@@ -43,7 +43,7 @@ const TOOLS = [
   },
   {
     name: 'swarm_status',
-    description: 'Compact state of a swarm: phase, roster, task counts, open questions for you, new findings since the id you pass, filtered tool errors, cost, last Lead message. Pass wait_ms to block (up to 600000) until the swarm needs you: the Lead posts a plan, a question, a failure, three or more warnings or tool errors, or the run goes idle, stops, or fails. Routine progress is held and summarized in findings.newByType; the result names the reason in wake. Pass since_finding with the latestId from your previous call so you only read new ledger entries.',
+    description: 'Compact state of a swarm: phase, roster, task counts, open questions for you, new findings since the id you pass, filtered tool errors, cost, last Lead message. Pass wait_ms to block (up to 600000) until the swarm needs you: the Lead posts a plan, a question, a failure, three or more warnings or tool errors, or the run goes idle, stops, or fails. Routine progress is held and summarized in findings.newByType; the result names the reason in wake. Pass since_finding with the latestId from your previous call so you only read new ledger entries. failure.kind provider_rejected means the provider refused the request before the team spent a token; the install is fine. On 400 or 401 the model id or key is wrong for the configured endpoint: swarm_stop, then swarm_start with a model it accepts. On 402 or 429 fix the balance or wait, then one swarm_steer retries.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,

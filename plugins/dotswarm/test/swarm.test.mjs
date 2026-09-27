@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 process.env.DOTSWARM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-swarm-test-'));
-const { SwarmManager, attentionReason } = await import('../src/swarm.mjs');
+const { SwarmManager, attentionReason, providerRejection } = await import('../src/swarm.mjs');
 const { DshClient } = await import('../src/dsh-client.mjs');
 const fake = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-dsh.mjs');
 
@@ -119,6 +119,9 @@ test('a Lead turn that ends in a provider error reports the error and wakes fail
   const status = swarm.status();
   assert.equal(status.phase, 'idle');
   assert.equal(status.error, 'Lead turn 1 ended in an error: DeepSeek API error (HTTP 400) (INVALID_REQUEST, 400, request req-1)');
+  assert.deepEqual(status.failure, {
+    kind: 'provider_rejected', httpStatus: 400, providerError: 'DeepSeek API error (HTTP 400)', model: 'deepseek-v4-flash', provider: 'deepseek-official',
+  }, 'a request the provider refused before any token is named, with the model it was sent');
   const result = await swarm.result();
   assert.equal(result.complete, false);
   assert.match(result.error, /HTTP 400/);
@@ -128,7 +131,19 @@ test('a Lead turn that ends in a provider error reports the error and wakes fail
   const deadline = Date.now() + 5000;
   while ((swarm.phase !== 'idle' || swarm.problem) && Date.now() < deadline) await swarm.waitForChange(500);
   assert.equal(swarm.status().error, undefined);
+  assert.equal(swarm.status().failure, undefined);
   assert.equal((await swarm.result()).complete, true);
+});
+
+test('providerRejection names only a refused request that spent no tokens', () => {
+  const zero = { input: 0, output: 0, cacheRead: 0 };
+  const spec = { model: 'm-1', provider: 'p-1' };
+  const quota = { message: 'Insufficient Balance', code: 'QUOTA', status: 402 };
+  assert.deepEqual(providerRejection({ failure: quota, tokens: zero, ...spec }), { kind: 'provider_rejected', httpStatus: 402, providerError: 'Insufficient Balance', model: 'm-1', provider: 'p-1' });
+  for (const status of [400, 401, 429]) assert.equal(providerRejection({ failure: { ...quota, status }, tokens: zero, ...spec }).httpStatus, status);
+  assert.equal(providerRejection({ failure: { ...quota, status: 500 }, tokens: zero, ...spec }), null, 'a server error is not a rejection');
+  assert.equal(providerRejection({ failure: quota, tokens: { ...zero, input: 10 }, ...spec }), null, 'a run that already spent tokens was not rejected up front');
+  assert.equal(providerRejection({ failure: null, tokens: zero, ...spec }), null);
 });
 
 function tempGitRepo() {

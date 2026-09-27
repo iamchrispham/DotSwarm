@@ -131,6 +131,20 @@ export function attentionReason({ phase, error, newFindings, openQuestionIds, kn
   return null;
 }
 
+// HTTP statuses a provider returns when it refuses the request itself: an unknown model id or a
+// malformed request, a bad key, no balance, a rate limit.
+const PROVIDER_REJECTIONS = new Set([400, 401, 402, 429]);
+
+/**
+ * The provider refused the Lead's request before the team spent a single token, so nothing ran:
+ * the fix is the model, the provider, or the account, not the install. Null for anything else.
+ */
+export function providerRejection({ failure, tokens, model, provider }) {
+  if (!failure || !PROVIDER_REJECTIONS.has(failure.status)) return null;
+  if (tokens.input + tokens.output + tokens.cacheRead > 0) return null;
+  return { kind: 'provider_rejected', httpStatus: failure.status, providerError: failure.message ?? null, model, provider };
+}
+
 export class Swarm {
   constructor(spec, { launch, dotbot } = {}) {
     this.id = spec.swarmId;
@@ -515,6 +529,7 @@ export class Swarm {
     const s = this.state;
     const findings = this.findings.readAll();
     const lead = s.lastLeadText();
+    const rejected = providerRejection({ failure: s.leadTurnFailure, tokens: s.tokens(), model: this.spec.model, provider: this.spec.provider });
     const sinceRows = sinceFinding ? this.findings.list({ since: sinceFinding, limit: 500 }).filter((f) => f.type !== 'steer') : null;
     const newFindings = sinceRows ? sinceRows.slice(-20) : findings.slice(-5);
     return {
@@ -526,6 +541,7 @@ export class Swarm {
       mode: this.spec.mode ?? 'build',
       ...(this.spec.design ? { design: true, model: this.spec.model, screens: toPosix(path.join(this.dir, 'screens')) } : {}),
       ...(this.problem ? { error: this.problem.slice(0, 1500) } : {}),
+      ...(rejected ? { failure: rejected } : {}),
       elapsedSeconds: this.elapsedSeconds(),
       workspace: this.workspace,
       ...(this.branch ? { branch: this.branch } : {}),
