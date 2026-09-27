@@ -236,8 +236,9 @@ export class Swarm {
     this.workspace = spec.workspace;
     this.branch = null;
     this.launch = launch ?? defaultLaunch;
-    // The directory the coordinator named, inside an isolated worktree; the sweep covers only it.
-    this.scopeDir = null;
+    // Where the coordinator's workspace sits inside an isolated worktree ('app/'); allowed_paths
+    // resolve there. Empty when the workspace was the repository root or the swarm runs in place.
+    this.scopePrefix = '';
     this.#log = null;
     this.owner = null;
   }
@@ -394,8 +395,7 @@ export class Swarm {
     const prefix = await git(this.spec.workspace, ['rev-parse', '--show-prefix']);
     await git(this.spec.workspace, ['worktree', 'add', '-b', this.branch, worktree, 'HEAD']);
     this.workspace = worktree;
-    const scope = path.join(worktree, prefix);
-    if (prefix && fs.existsSync(scope)) this.scopeDir = scope;
+    if (prefix && fs.existsSync(path.join(worktree, prefix))) this.scopePrefix = prefix;
   }
 
   /**
@@ -462,13 +462,15 @@ export class Swarm {
       fs.copyFileSync(inherited, file);
       return;
     }
-    const dir = this.scopeDir ?? this.workspace;
+    // In place the sweep covers the directory the coordinator named, not its siblings; an isolated
+    // worktree is the team's alone, so all of it.
+    const dir = this.workspace;
     if (!(await isGitRepo(dir))) return;
     try {
       const head = await headCommit(dir);
       // What was already changed or untracked at the start, so the scope check can leave it out.
       const start = Object.fromEntries([...(await changedPaths(dir, head))].map((p) => [p, fingerprint(dir, p)]));
-      fs.writeFileSync(file, JSON.stringify({ dir, head, start, ...(await untrackedAndIgnored(dir)) }));
+      fs.writeFileSync(file, JSON.stringify({ dir, scope: this.scopePrefix, head, start, ...(await untrackedAndIgnored(dir)) }));
     } catch { /* no baseline, no sweep */ }
   }
 
@@ -491,8 +493,9 @@ export class Swarm {
       try {
         const start = baseline.start ?? {};
         const byTeam = [...(await changedPaths(dir, baseline.head))].filter((p) => start[p] === undefined || fingerprint(dir, p) !== start[p]);
-        const inside = await changedPaths(dir, baseline.head, this.spec.allowedPaths);
-        Object.assign(sweep, capped('outsideAllowedPaths', newSince([...inside], byTeam)));
+        const scope = baseline.scope ?? '';
+        const inside = [...(await changedPaths(path.join(dir, scope), baseline.head, this.spec.allowedPaths))].map((p) => path.posix.join(scope, p));
+        Object.assign(sweep, capped('outsideAllowedPaths', newSince(inside, byTeam)));
       } catch (error) {
         sweep.scopeError = error.message;
       }

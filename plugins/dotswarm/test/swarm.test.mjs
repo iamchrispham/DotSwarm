@@ -494,7 +494,7 @@ test('a subdirectory workspace sweeps only itself, with paths and allowed_paths 
   assert.deepEqual(git.outsideAllowedPaths, ['stray.txt']);
 });
 
-test('an isolated subdirectory workspace resolves allowed_paths inside the same subdirectory of the worktree', async (t) => {
+test('an isolated subdirectory workspace sweeps its whole worktree and resolves allowed_paths inside the same subdirectory', async (t) => {
   const repo = repoWithApp();
   const manager = new SwarmManager({ launch: fakeLaunch('normal') });
   t.after(() => manager.shutdownAll());
@@ -503,9 +503,10 @@ test('an isolated subdirectory workspace resolves allowed_paths inside the same 
   await swarm.waitForAttention(5000);
   fs.writeFileSync(path.join(swarm.workspace, 'app', 'src', 'a.js'), 'changed\n');
   fs.writeFileSync(path.join(swarm.workspace, 'app', 'notes.md'), 'x\n');
+  fs.writeFileSync(path.join(swarm.workspace, 'root-stray.txt'), 'x\n');
   const { git } = await swarm.result();
-  assert.deepEqual(git.outsideAllowedPaths, ['notes.md']);
-  assert.deepEqual(git.newUntracked, ['notes.md']);
+  assert.deepEqual(git.outsideAllowedPaths, ['app/notes.md', 'root-stray.txt'], 'app/src/a.js is inside src relative to app');
+  assert.deepEqual(git.newUntracked, ['app/notes.md', 'root-stray.txt'], 'the worktree is the team\'s alone, so a stray outside app is listed too');
 });
 
 test('owner questions come back complete, numbered, and only from this run', async (t) => {
