@@ -704,6 +704,34 @@ export function defaultLaunch({ swarm, patchFile }) {
   });
 }
 
+// Reject a file far past the word cap before reading it; a word plus its space rarely tops this.
+const BRIEF_FILE_BYTES_PER_WORD = 16;
+
+/**
+ * An inline string, or the text of the absolute path in <key>_file, never both. A file keeps its
+ * backslashes and quotes as written, which a long brief pasted into a JSON argument does not.
+ */
+function inlineOrFile(input, key) {
+  const inline = input[key];
+  const file = input[`${key}_file`];
+  const hasInline = inline !== undefined && inline !== null && String(inline).trim() !== '';
+  if (file === undefined || file === null || file === '') return hasInline ? String(inline) : undefined;
+  if (hasInline) throw new Error(`pass ${key} or ${key}_file, not both`);
+  const filePath = String(file);
+  if (!path.isAbsolute(filePath)) throw new Error(`${key}_file must be an absolute path: ${filePath}`);
+  const cap = DEFAULTS.briefWordsCap;
+  let text;
+  try {
+    if (fs.statSync(filePath).size > cap * BRIEF_FILE_BYTES_PER_WORD) throw new Error(`larger than ${cap} words`);
+    text = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    throw new Error(`${key}_file cannot be read: ${error.message}`);
+  }
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words > cap) throw new Error(`${key}_file has ${words} words; the cap is ${cap}`);
+  return text;
+}
+
 export class SwarmManager {
   constructor({ launch, dotbot } = {}) {
     this.swarms = new Map();
@@ -726,8 +754,8 @@ export class SwarmManager {
   }
 
   normalizeSpec(input) {
-    const objective = String(input.objective ?? '').trim();
-    if (!objective) throw new Error('objective is required');
+    const objective = (inlineOrFile(input, 'objective') ?? '').trim();
+    if (!objective) throw new Error('objective or objective_file is required');
     const workspace = path.resolve(input.workspace || process.env.DOTSWARM_WORKSPACE || process.cwd());
     if (!fs.existsSync(workspace) || !fs.statSync(workspace).isDirectory()) throw new Error(`workspace does not exist: ${workspace}`);
     const maxAgents = Math.max(1, Math.min(Number(input.max_agents ?? DEFAULTS.maxAgents) || DEFAULTS.maxAgents, DEFAULTS.maxAgentsCap));
@@ -749,7 +777,7 @@ export class SwarmManager {
       objective,
       plan: input.plan ? String(input.plan) : undefined,
       acceptanceCriteria: Array.isArray(input.acceptance_criteria) ? input.acceptance_criteria.map(String) : undefined,
-      context: input.context ? String(input.context) : undefined,
+      context: inlineOrFile(input, 'context'),
       roles: Array.isArray(input.roles) ? input.roles.map(String) : undefined,
       maxAgents,
       workspace,

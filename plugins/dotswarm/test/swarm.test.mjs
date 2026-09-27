@@ -237,7 +237,7 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
 
 test('spec validation', () => {
   const manager = new SwarmManager();
-  assert.throws(() => manager.normalizeSpec({ workspace: os.tmpdir() }), /objective is required/);
+  assert.throws(() => manager.normalizeSpec({ workspace: os.tmpdir() }), /objective or objective_file is required/);
   assert.throws(() => manager.normalizeSpec({ objective: 'x', workspace: path.join(os.tmpdir(), 'nope-' + Date.now()) }), /does not exist/);
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_agents: 99 }).maxAgents, 7);
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), permission_mode: 'read-only' }).permissionMode, 'read-only');
@@ -251,6 +251,26 @@ test('spec validation', () => {
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), design: true, model: 'deepseek-v4-pro' }).model, 'deepseek-v4-pro');
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), mode: 'refactor' }).mode, 'refactor');
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), mode: 'nonsense' }).mode, 'build');
+});
+
+test('objective and context can come from files, one source each, capped like a brief', () => {
+  const manager = new SwarmManager();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-brief-files-'));
+  const objectiveFile = path.join(dir, 'brief.md');
+  const brief = '# Brief\nMatch `\\(` and `\\*` literally; "quotes" stay.\n';
+  fs.writeFileSync(objectiveFile, brief);
+  const contextFile = path.join(dir, 'context.md');
+  fs.writeFileSync(contextFile, 'do not touch db\n');
+  const spec = manager.normalizeSpec({ objective_file: objectiveFile, context_file: contextFile, workspace: os.tmpdir() });
+  assert.equal(spec.objective, brief.trim(), 'the file text arrives unescaped');
+  assert.equal(spec.context, 'do not touch db\n');
+  assert.throws(() => manager.normalizeSpec({ objective: 'x', objective_file: objectiveFile, workspace: os.tmpdir() }), /objective or objective_file, not both/);
+  assert.throws(() => manager.normalizeSpec({ objective: 'x', context: 'y', context_file: contextFile, workspace: os.tmpdir() }), /context or context_file, not both/);
+  assert.throws(() => manager.normalizeSpec({ objective_file: 'brief.md', workspace: os.tmpdir() }), /absolute path/);
+  assert.throws(() => manager.normalizeSpec({ objective_file: path.join(dir, 'missing.md'), workspace: os.tmpdir() }), /objective_file cannot be read/);
+  const long = path.join(dir, 'long.md');
+  fs.writeFileSync(long, 'word '.repeat(30_001));
+  assert.throws(() => manager.normalizeSpec({ objective_file: long, workspace: os.tmpdir() }), /30001 words; the cap is 30000/);
 });
 
 test('attentionReason holds routine progress and wakes on what needs the coordinator', () => {

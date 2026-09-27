@@ -21,12 +21,14 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       additionalProperties: false,
-      required: ['objective', 'workspace'],
+      required: ['workspace'],
       properties: {
-        objective: { type: 'string', description: 'What must be true when the swarm is done. One to three paragraphs.' },
+        objective: { type: 'string', description: 'What must be true when the swarm is done. One to three paragraphs. Required unless objective_file is given.' },
+        objective_file: { type: 'string', description: `Absolute path of a file holding the objective, read by the server instead of objective (not both). Use it for a long brief, or any text with backslashes or quotes; at most ${DEFAULTS.briefWordsCap} words.` },
         plan: { type: 'string', description: 'Your work breakdown and approach. Numbered work units with dependencies and the files each is expected to touch.' },
         acceptance_criteria: { type: 'array', items: { type: 'string' }, description: 'Concrete, checkable criteria, including the exact test or verification commands.' },
         context: { type: 'string', description: 'Context packet: relevant repo facts, constraints, decisions already made, things not to touch. Not the conversation.' },
+        context_file: { type: 'string', description: `Absolute path of a file holding the context packet, read by the server instead of context (not both); at most ${DEFAULTS.briefWordsCap} words.` },
         workspace: { type: 'string', description: 'Absolute path of the checkout the team works in.' },
         max_agents: { type: 'integer', minimum: 1, maximum: DEFAULTS.maxAgentsCap, description: `Teammate budget the Lead is told to stay within (default ${DEFAULTS.maxAgents}). The runtime cannot refuse a spawn, so it is not enforced; swarm_status reports teammatesOverBudget if the Lead exceeds it. Small tasks need 1 or 2.` },
         roles: { type: 'array', items: { type: 'string' }, description: 'Optional role hints such as "explorer: ..." or "tester: ...".' },
