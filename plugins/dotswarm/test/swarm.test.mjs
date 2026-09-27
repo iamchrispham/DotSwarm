@@ -395,6 +395,35 @@ test('the result lists files a swarm left untracked or ignored in the workspace 
   assert.deepEqual(git.newUntracked, ['probe.test.js'], 'untracked files that were there at the start are not listed');
 });
 
+test('with allowed_paths the result lists every changed path outside them, as git reports it', async (t) => {
+  const repo = tempGitRepo();
+  const run = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'a\n');
+  run(['add', '.']);
+  run(['commit', '-q', '-m', 'src']);
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'Edit src', workspace: repo, isolate: false, max_agents: 1, allowed_paths: ['src', 'docs/*.md'] });
+  assert.deepEqual(swarm.spec.allowedPaths, ['src', 'docs/*.md']);
+  await swarm.waitForAttention(5000);
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'changed\n');
+  fs.writeFileSync(path.join(repo, 'src', 'b.js'), 'new\n');
+  fs.mkdirSync(path.join(repo, 'docs'));
+  fs.writeFileSync(path.join(repo, 'docs', 'x.md'), 'doc\n');
+  fs.writeFileSync(path.join(repo, 'README.md'), '# changed\n');
+  fs.writeFileSync(path.join(repo, 'probe.test.js'), 'x');
+  fs.writeFileSync(path.join(repo, 'other.txt'), 'committed by the team\n');
+  run(['add', 'other.txt']);
+  run(['commit', '-q', '-m', 'team commit']);
+  const { git } = await swarm.result();
+  assert.deepEqual(git.outsideAllowedPaths, ['README.md', 'other.txt', 'probe.test.js']);
+
+  const unscoped = await manager.start({ objective: 'x', workspace: repo, isolate: false, max_agents: 1 });
+  await unscoped.waitForAttention(5000);
+  assert.equal((await unscoped.result()).git.outsideAllowedPaths, undefined, 'no allowed_paths, no scope list');
+});
+
 test('owner questions come back complete, numbered, and only from this run', async (t) => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-ws-'));
   const manager = new SwarmManager({ launch: fakeLaunch('normal') });

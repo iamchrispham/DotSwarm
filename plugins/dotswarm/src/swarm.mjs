@@ -131,6 +131,28 @@ async function untrackedAndIgnored(cwd) {
   };
 }
 
+/** The commit the team started from; null in a repository with no commit yet. */
+async function headCommit(cwd) {
+  try {
+    return await git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Paths changed since the start commit (committed, staged, or not) plus untracked files, limited
+ * to the pathspecs when given. Paths are relative to the repository root, as git prints them.
+ */
+async function changedPaths(cwd, head, pathspecs = [':/']) {
+  const spec = ['--', ...pathspecs];
+  const tracked = head
+    ? [['diff', '-z', '--name-only', '--no-renames', head, ...spec]]
+    : [['diff', '-z', '--name-only', '--no-renames', '--cached', ...spec], ['diff', '-z', '--name-only', '--no-renames', ...spec]];
+  const lists = await Promise.all([...tracked, ['ls-files', '-z', '--others', '--exclude-standard', '--full-name', ...spec]].map((args) => git(cwd, args)));
+  return new Set(lists.flatMap(splitZ));
+}
+
 /** Entries present now and absent at the start, capped so a stray install cannot flood the result. */
 function newSince(before, now) {
   const seen = new Set(before);
@@ -422,20 +444,33 @@ export class Swarm {
     }
     if (!(await isGitRepo(this.workspace))) return;
     try {
-      fs.writeFileSync(file, JSON.stringify(await untrackedAndIgnored(this.workspace)));
+      fs.writeFileSync(file, JSON.stringify({ head: await headCommit(this.workspace), ...(await untrackedAndIgnored(this.workspace)) }));
     } catch { /* no baseline, no sweep */ }
   }
 
-  /** Files the team left in the workspace that no diff shows: new untracked files and new ignored entries. */
+  /**
+   * Files the team left in the workspace that no diff shows (new untracked files and new ignored
+   * entries) and, when the coordinator passed allowed_paths, every changed path outside them.
+   */
   async #workspaceSweep() {
     const baseline = readJson(path.join(this.dir, BASELINE_FILE));
     if (!baseline) return {};
+    const sweep = {};
     try {
       const now = await untrackedAndIgnored(this.workspace);
-      return { newUntracked: newSince(baseline.untracked, now.untracked), newIgnored: newSince(baseline.ignored, now.ignored) };
+      Object.assign(sweep, { newUntracked: newSince(baseline.untracked, now.untracked), newIgnored: newSince(baseline.ignored, now.ignored) });
     } catch (error) {
-      return { sweepError: error.message };
+      sweep.sweepError = error.message;
     }
+    if (this.spec.allowedPaths?.length) {
+      try {
+        const inside = await changedPaths(this.workspace, baseline.head, this.spec.allowedPaths);
+        sweep.outsideAllowedPaths = newSince([...inside], [...(await changedPaths(this.workspace, baseline.head))]);
+      } catch (error) {
+        sweep.scopeError = error.message;
+      }
+    }
+    return sweep;
   }
 
   /** Where teammates put probes and red-proof copies: outside the workspace, next to the ledger. */
@@ -841,6 +876,7 @@ export class SwarmManager {
     const model = input.model ? String(input.model) : (design ? DEFAULTS.visionModel : DEFAULTS.model);
     // Skills only mean something when DotBot is connected; otherwise the argument is ignored.
     const skillRequests = this.dotbot ? parseSkillRequests(input.skills) : [];
+    const allowedPaths = Array.isArray(input.allowed_paths) ? input.allowed_paths.map(String).filter((p) => p.trim()) : [];
     return {
       ...(skillRequests.length ? { skillRequests } : {}),
       swarmId: newId(),
@@ -851,6 +887,7 @@ export class SwarmManager {
       acceptanceCriteria: Array.isArray(input.acceptance_criteria) ? input.acceptance_criteria.map(String) : undefined,
       context: inlineOrFile(input, 'context'),
       roles: Array.isArray(input.roles) ? input.roles.map(String) : undefined,
+      ...(allowedPaths.length ? { allowedPaths } : {}),
       maxAgents,
       workspace,
       isolate,

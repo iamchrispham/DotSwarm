@@ -64,7 +64,7 @@ Then start a new Codex session (open sessions keep the old version) and ask it t
 
 | Tool | Purpose |
 |---|---|
-| `swarm_start` | `mode` `brief` (read and condense into `brief.md`), `build` (work a spec fully determines), `verify` (check, fix mechanical defects, escalate judgment), or `refactor`; objective, plan, acceptance criteria, context packet (objective and context can instead be absolute file paths in `objective_file` and `context_file`), absolute workspace, `max_agents`, `isolate`, `design`, `brief_words`, model and effort |
+| `swarm_start` | `mode` `brief` (read and condense into `brief.md`), `build` (work a spec fully determines), `verify` (check, fix mechanical defects, escalate judgment), or `refactor`; objective, plan, acceptance criteria, context packet (objective and context can instead be absolute file paths in `objective_file` and `context_file`), absolute workspace, `allowed_paths` (git pathspecs; the result lists every changed path outside them), `max_agents`, `isolate`, `design`, `brief_words`, model and effort |
 | `swarm_status` | compressed state; `wait_ms` blocks until the swarm needs you (plan, question, failure, warning or tool-error burst, idle/stopped/failed) and `wake` names the reason; `wake_on: "any"` wakes on every change; `since_finding` returns only new ledger entries; lists open questions, filtered tool errors, and a cost line |
 | `swarm_steer` | one instruction to the Lead, delivered as its next turn and immediately as a ledger entry |
 | `swarm_task_add` | hand the Lead a new board task instead of editing the workspace yourself |
