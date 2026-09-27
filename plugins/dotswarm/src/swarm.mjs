@@ -163,11 +163,16 @@ function fingerprint(dir, relPath) {
   }
 }
 
-/** Entries present now and absent at the start, capped so a stray install cannot flood the result. */
+/** Entries present now and absent at the start, sorted. */
 function newSince(before, now) {
   const seen = new Set(before);
-  const added = now.filter((p) => !seen.has(p)).sort();
-  return added.length > SWEEP_LIST_CAP ? [...added.slice(0, SWEEP_LIST_CAP), `(${added.length - SWEEP_LIST_CAP} more)`] : added;
+  return now.filter((p) => !seen.has(p)).sort();
+}
+
+/** A result field holding at most SWEEP_LIST_CAP paths, so a stray install cannot flood it; <name>Omitted counts the rest. */
+function capped(name, paths) {
+  const omitted = paths.length - SWEEP_LIST_CAP;
+  return { [name]: paths.slice(0, SWEEP_LIST_CAP), ...(omitted > 0 ? { [`${name}Omitted`]: omitted } : {}) };
 }
 
 const countBy = (rows, key) => rows.reduce((acc, r) => ({ ...acc, [key(r)]: (acc[key(r)] ?? 0) + 1 }), {});
@@ -478,7 +483,7 @@ export class Swarm {
     const sweep = {};
     try {
       const now = await untrackedAndIgnored(dir);
-      Object.assign(sweep, { newUntracked: newSince(baseline.untracked, now.untracked), newIgnored: newSince(baseline.ignored, now.ignored) });
+      Object.assign(sweep, capped('newUntracked', newSince(baseline.untracked, now.untracked)), capped('newIgnored', newSince(baseline.ignored, now.ignored)));
     } catch (error) {
       sweep.sweepError = error.message;
     }
@@ -487,7 +492,7 @@ export class Swarm {
         const start = baseline.start ?? {};
         const byTeam = [...(await changedPaths(dir, baseline.head))].filter((p) => start[p] === undefined || fingerprint(dir, p) !== start[p]);
         const inside = await changedPaths(dir, baseline.head, this.spec.allowedPaths);
-        sweep.outsideAllowedPaths = newSince([...inside], byTeam);
+        Object.assign(sweep, capped('outsideAllowedPaths', newSince([...inside], byTeam)));
       } catch (error) {
         sweep.scopeError = error.message;
       }

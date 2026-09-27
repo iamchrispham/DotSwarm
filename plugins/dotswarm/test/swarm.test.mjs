@@ -445,6 +445,22 @@ test('allowed_paths leaves out what the workspace already had changed at the sta
   assert.deepEqual((await swarm.result()).git.outsideAllowedPaths, ['README.md'], 'a file dirty at the start that the team changes again is listed');
 });
 
+test('a long sweep list keeps only paths and reports the overflow in its own count', async (t) => {
+  const repo = tempGitRepo();
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'x', workspace: repo, isolate: false, max_agents: 1, allowed_paths: ['src'] });
+  await swarm.waitForAttention(5000);
+  for (let i = 0; i < 52; i += 1) fs.writeFileSync(path.join(repo, `f-${String(i).padStart(2, '0')}.txt`), 'x');
+  const { git } = await swarm.result();
+  for (const field of ['newUntracked', 'outsideAllowedPaths']) {
+    assert.equal(git[field].length, 50);
+    assert.ok(git[field].every((p) => fs.existsSync(path.join(repo, p))), `${field} holds only paths`);
+    assert.equal(git[`${field}Omitted`], 2);
+  }
+  assert.equal(git.newIgnoredOmitted, undefined);
+});
+
 function repoWithApp() {
   const repo = tempGitRepo();
   fs.mkdirSync(path.join(repo, 'app', 'src'), { recursive: true });
