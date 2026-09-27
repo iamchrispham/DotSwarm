@@ -431,6 +431,20 @@ test('with allowed_paths the result lists every changed path outside them, as gi
   assert.equal((await unscoped.result()).git.outsideAllowedPaths, undefined, 'no allowed_paths, no scope list');
 });
 
+test('allowed_paths leaves out what the workspace already had changed at the start, unless the team changes it again', async (t) => {
+  const repo = tempGitRepo();
+  fs.writeFileSync(path.join(repo, 'coordinator-notes.md'), 'mine\n');
+  fs.writeFileSync(path.join(repo, 'README.md'), '# repo, edited by the coordinator\n');
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'Verify it', workspace: repo, mode: 'verify', max_agents: 1, allowed_paths: ['app'] });
+  assert.equal(swarm.branch, null, 'a verify swarm works in place');
+  await swarm.waitForAttention(5000);
+  assert.deepEqual((await swarm.result()).git.outsideAllowedPaths, [], 'the team touched nothing');
+  fs.writeFileSync(path.join(repo, 'README.md'), '# repo, edited by the coordinator, then by the team\n');
+  assert.deepEqual((await swarm.result()).git.outsideAllowedPaths, ['README.md'], 'a file dirty at the start that the team changes again is listed');
+});
+
 function repoWithApp() {
   const repo = tempGitRepo();
   fs.mkdirSync(path.join(repo, 'app', 'src'), { recursive: true });

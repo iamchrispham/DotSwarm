@@ -153,6 +153,16 @@ async function changedPaths(cwd, head, pathspecs = []) {
   return new Set(lists.flatMap(splitZ));
 }
 
+/** Size and modification time: enough to tell whether a file was written since the start. */
+function fingerprint(dir, relPath) {
+  try {
+    const stat = fs.statSync(path.join(dir, relPath));
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return 'missing';
+  }
+}
+
 /** Entries present now and absent at the start, capped so a stray install cannot flood the result. */
 function newSince(before, now) {
   const seen = new Set(before);
@@ -450,7 +460,10 @@ export class Swarm {
     const dir = this.scopeDir ?? this.workspace;
     if (!(await isGitRepo(dir))) return;
     try {
-      fs.writeFileSync(file, JSON.stringify({ dir, head: await headCommit(dir), ...(await untrackedAndIgnored(dir)) }));
+      const head = await headCommit(dir);
+      // What was already changed or untracked at the start, so the scope check can leave it out.
+      const start = Object.fromEntries([...(await changedPaths(dir, head))].map((p) => [p, fingerprint(dir, p)]));
+      fs.writeFileSync(file, JSON.stringify({ dir, head, start, ...(await untrackedAndIgnored(dir)) }));
     } catch { /* no baseline, no sweep */ }
   }
 
@@ -471,8 +484,10 @@ export class Swarm {
     }
     if (this.spec.allowedPaths?.length) {
       try {
+        const start = baseline.start ?? {};
+        const byTeam = [...(await changedPaths(dir, baseline.head))].filter((p) => start[p] === undefined || fingerprint(dir, p) !== start[p]);
         const inside = await changedPaths(dir, baseline.head, this.spec.allowedPaths);
-        sweep.outsideAllowedPaths = newSince([...inside], [...(await changedPaths(dir, baseline.head))]);
+        sweep.outsideAllowedPaths = newSince([...inside], byTeam);
       } catch (error) {
         sweep.scopeError = error.message;
       }
