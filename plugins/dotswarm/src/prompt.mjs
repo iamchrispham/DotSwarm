@@ -4,12 +4,18 @@
 
 export const REPORT_HEADINGS = ['Summary', 'Changes', 'Verification', 'Unresolved', 'Handoff'];
 
-export const WORKER_PROTOCOL = `TEAM PROTOCOL (give this to every teammate verbatim)
+/** Where probes and red-proof copies go, so none is left in the workspace for its lint or build to trip on. */
+function scratchRule(scratchDir) {
+  return `Write probes, red-proof copies, bad-input fixtures, and every other scratch file under ${scratchDir}, never inside the workspace, not even in an ignored directory. When a check can only run inside the workspace, change the file in place, run the check, and restore the file before going on.`;
+}
+
+export const workerProtocol = (scratchDir) => `TEAM PROTOCOL (give this to every teammate verbatim)
 Before starting:
 - Call team_task_list and team_task_get for your assigned task. Claim it with team_task_update action=claim using the current revision.
 - Call mcp__findings__list_findings for your scope before touching code. Later calls pass since with the last id you saw.
 While working:
 - Keep your task's write scopes. If you must touch files outside them, message the lead first.
+- ${scratchRule(scratchDir)}
 - Record discoveries that affect other tasks, warnings, and failures with mcp__findings__record_finding (author = your teammate name). Do not record routine progress.
 - Message a teammate directly with send_message only when they need information from you. Do not send status chatter.
 When blocked:
@@ -33,6 +39,7 @@ function bullet(items) {
  * @param {string[]} [spec.roles]
  * @param {string} spec.workspace
  * @param {boolean} [spec.isolated]
+ * @param {string} [spec.scratchDir]
  */
 /**
  * Section handed to the Lead of a resumed swarm: what the previous team had
@@ -70,11 +77,12 @@ Copy the skill folder path into the description of every task for that work unit
 }
 
 /** How the reviewer judges work: the standard the coordinator would otherwise have to apply in its own audit. */
-export const REVIEW_STANDARD = `REVIEW STANDARD (give this to the reviewer verbatim)
+export const reviewStandard = (scratchDir) => `REVIEW STANDARD (give this to the reviewer verbatim)
 - Prove every failure. Reproduce it with a command, a test, or a small fixture and record the evidence in the finding. A claim you cannot reproduce is a question, not a failure.
 - Read the result the way its real user will. For anything people read, read the rendered text as that audience and flag wording that sounds like internal notes, audits, compliance, or tooling. For code, read the diff as its next maintainer.
 - A fact about an outside entity (a company record, a licence, an address, a person) is verified only when the source matches on name and at least one other identifier. Otherwise it is a candidate and must not be presented as fact.
 - Check the checks. A validator, gate, or release script passes review only if it fails when it should: run it against a deliberately bad input and confirm a nonzero exit.
+- ${scratchRule(scratchDir)}
 - Review the whole set, not only each piece: repeated sentences across outputs, claims used where they are not allowed, one piece contradicting another.
 - Record each problem as its own finding of type failure or warning with the file and the exact text or line. Do not approve your own team's work on the user's behalf.`;
 
@@ -125,7 +133,7 @@ export function buildVerifySection() {
   return `VERIFY MODE
 This swarm proves the work in the workspace meets the acceptance criteria and repairs mechanical defects, so the coordinator never has to read the work itself.
 - Run every acceptance command and the project's standard checks: install, build, type check, tests, lint, and any validators. For anything a person sees, render and inspect it as the design protocol describes when design is on, and measure contrast, target size, and overflow with scripts.
-- Check the checks: run each gate or validator against a deliberately bad input and confirm it fails.
+- Check the checks: run each gate or validator against a deliberately bad input and confirm it fails. Build the bad input under the scratch directory named in the TEAM PROTOCOL, never in the workspace.
 - Fix mechanical defects directly: failing builds, types, lint, or tests; broken links and imports; measurable accessibility (contrast, target size, labels, required attributes); overflow and clipping; missing files the spec requires; configuration. Each fix is a finding of type result naming the file.
 - Never change judgment content: wording people read, visual direction, architecture, public interfaces, or behaviour beyond the spec. When a defect needs such a change, record a finding of type question with scope coordinator giving the file, the exact text or line, the problem, and a proposed fix. These are the only items the coordinator reads.
 - Keep the escalation list short: one finding per distinct problem, most important first. Do not escalate what you can fix mechanically.
@@ -190,9 +198,9 @@ HOW TO RUN THE SWARM
 5. When the work stops at an approval gate or needs decisions from the owner (the person the coordinator works for), record every question for the owner as its own finding of type question with scope owner, after your last edit and before the FINAL REPORT. Record them in the order the owner should read them, one question per finding, worded exactly as the owner should see it: plain language, no internal jargon, and starting with "Approval:" or "Information needed:". The coordinator receives them all at once and shows them as one numbered list, so never put them only in your report or only in a file.
 6. Finish with the FINAL REPORT format below and nothing after it. Do not stop while a required teammate is still running.
 
-${WORKER_PROTOCOL}
+${workerProtocol(spec.scratchDir ?? 'the swarm scratch directory')}
 
-${REVIEW_STANDARD}
+${reviewStandard(spec.scratchDir ?? 'the swarm scratch directory')}
 
 FINAL REPORT (use exactly these headings)
 ## Summary

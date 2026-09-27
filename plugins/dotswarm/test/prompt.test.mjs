@@ -81,3 +81,14 @@ test('brief and verify swarms get their own rules and roster', () => {
   assert.match(verify, /QUALITY BAR/);
   assert.match(suggestedRoles(3, { mode: 'verify' })[0], /^checker:/);
 });
+
+test('probes and red-proof copies go to the swarm scratch directory, never the workspace', () => {
+  const prompt = buildLeadPrompt({ swarmId: 'sw-s', objective: 'Do it', maxAgents: 2, workspace: '/w', scratchDir: '/d/swarms/sw-s/scratch', mode: 'verify' });
+  const protocol = prompt.slice(prompt.indexOf('TEAM PROTOCOL (give'), prompt.indexOf('REVIEW STANDARD (give'));
+  const review = prompt.slice(prompt.indexOf('REVIEW STANDARD (give'), prompt.indexOf('FINAL REPORT (use'));
+  for (const [name, text] of [['team protocol', protocol], ['review standard', review]]) {
+    assert.ok(text.includes('/d/swarms/sw-s/scratch'), `${name} names the scratch directory`);
+    assert.match(text, /never inside the workspace, not even in an ignored directory/, `${name} keeps scratch out of the workspace`);
+  }
+  assert.match(prompt.slice(prompt.indexOf('VERIFY MODE'), prompt.indexOf('QUALITY BAR')), /bad input under the scratch directory/);
+});

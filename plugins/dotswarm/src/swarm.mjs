@@ -113,6 +113,31 @@ function swarmPatch({ findingsFile, swarmId, maxAgents }) {
   ].join('\n');
 }
 
+const BASELINE_FILE = 'workspace-baseline.json';
+const SWEEP_LIST_CAP = 50;
+
+const splitZ = (out) => out.split('\0').filter(Boolean);
+
+/**
+ * Untracked files, and ignored entries as git collapses them (a whole ignored directory is one
+ * entry), across the repository. ponytail: a file added inside an ignored directory that existed
+ * at the start is not seen; listing ignored files one by one would walk every node_modules.
+ */
+async function untrackedAndIgnored(cwd) {
+  const others = ['ls-files', '-z', '--others', '--exclude-standard', '--full-name'];
+  return {
+    untracked: splitZ(await git(cwd, [...others, '--', ':/'])),
+    ignored: splitZ(await git(cwd, [...others, '--ignored', '--directory', '--', ':/'])),
+  };
+}
+
+/** Entries present now and absent at the start, capped so a stray install cannot flood the result. */
+function newSince(before, now) {
+  const seen = new Set(before);
+  const added = now.filter((p) => !seen.has(p)).sort();
+  return added.length > SWEEP_LIST_CAP ? [...added.slice(0, SWEEP_LIST_CAP), `(${added.length - SWEEP_LIST_CAP} more)`] : added;
+}
+
 const countBy = (rows, key) => rows.reduce((acc, r) => ({ ...acc, [key(r)]: (acc[key(r)] ?? 0) + 1 }), {});
 
 const WARNING_BURST = 3;
@@ -250,6 +275,8 @@ export class Swarm {
         fs.copyFileSync(this.spec.resume.findingsFile, this.findings.file);
       }
       if (this.spec.isolate) await this.#createWorktree();
+      await this.#recordBaseline();
+      fs.mkdirSync(this.scratchDir, { recursive: true });
       await this.#loadSkills();
       this.persist();
       const patchFile = path.join(this.dir, 'swarm.patch.yml');
@@ -285,7 +312,7 @@ export class Swarm {
       if (this.spec.design) fs.mkdirSync(screensDir, { recursive: true });
       const prompt = buildLeadPrompt({
         ...this.spec, workspace: this.workspace, isolated: Boolean(this.branch), screensDir: toPosix(screensDir),
-        briefPath: toPosix(this.briefPath), notesDir: toPosix(path.join(this.dir, 'notes')),
+        briefPath: toPosix(this.briefPath), notesDir: toPosix(path.join(this.dir, 'notes')), scratchDir: toPosix(this.scratchDir),
       });
       fs.writeFileSync(path.join(this.dir, 'lead-prompt.md'), prompt);
       await this.#prompt(prompt, 'objective');
@@ -379,6 +406,41 @@ export class Swarm {
         message: `Skill ${f.id} was not loaded (${f.reason}); ${f.unit ? `work unit "${f.unit}" proceeds` : 'the work proceeds'} without it.`,
       });
     }
+  }
+
+  /**
+   * What the workspace held before the team started, for the completion sweep. A resumed swarm
+   * keeps its predecessor's, so the sweep covers the whole chain. Best effort: a workspace that is
+   * not a git repository, or a git failure, leaves no baseline and the result omits the sweep.
+   */
+  async #recordBaseline() {
+    const file = path.join(this.dir, BASELINE_FILE);
+    const inherited = this.spec.resume?.baselineFile;
+    if (inherited && fs.existsSync(inherited)) {
+      fs.copyFileSync(inherited, file);
+      return;
+    }
+    if (!(await isGitRepo(this.workspace))) return;
+    try {
+      fs.writeFileSync(file, JSON.stringify(await untrackedAndIgnored(this.workspace)));
+    } catch { /* no baseline, no sweep */ }
+  }
+
+  /** Files the team left in the workspace that no diff shows: new untracked files and new ignored entries. */
+  async #workspaceSweep() {
+    const baseline = readJson(path.join(this.dir, BASELINE_FILE));
+    if (!baseline) return {};
+    try {
+      const now = await untrackedAndIgnored(this.workspace);
+      return { newUntracked: newSince(baseline.untracked, now.untracked), newIgnored: newSince(baseline.ignored, now.ignored) };
+    } catch (error) {
+      return { sweepError: error.message };
+    }
+  }
+
+  /** Where teammates put probes and red-proof copies: outside the workspace, next to the ledger. */
+  get scratchDir() {
+    return path.join(this.dir, 'scratch');
   }
 
   /** Where a brief swarm writes its brief: outside the workspace, next to the ledger. */
@@ -665,6 +727,7 @@ export class Swarm {
       } catch (error) {
         gitInfo = { error: error.message };
       }
+      gitInfo = { ...gitInfo, ...(await this.#workspaceSweep()) };
     }
     const screens = this.spec.design ? toPosix(path.join(this.dir, 'screens')) : null;
     const handoffPath = path.join(this.dir, 'handoff.md');
@@ -839,7 +902,7 @@ export class SwarmManager {
       mode: DEFAULTS.modes.includes(mode) ? mode : (previous.spec.mode ?? 'build'),
       design: nextDesign,
       model: nextDesign && previous.spec.model === DEFAULTS.model ? DEFAULTS.visionModel : previous.spec.model,
-      resume: { ...previous.resumePacket(instruction), findingsFile: previous.findings.file },
+      resume: { ...previous.resumePacket(instruction), findingsFile: previous.findings.file, baselineFile: path.join(previous.dir, BASELINE_FILE) },
     };
     const swarm = new Swarm(spec, { launch: this.launch, dotbot: this.dotbot });
     swarm.branch = previous.branch;

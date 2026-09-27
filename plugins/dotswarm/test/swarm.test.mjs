@@ -229,6 +229,7 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
   assert.match(prompt, /REFACTOR MODE/);
   assert.match(prompt, /UX AND DESIGN ITERATION/);
   assert.equal(resumed.findings.readAll().length, first.findings.readAll().length, 'ledger carried over');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(resumed.dir, 'workspace-baseline.json'), 'utf8')), JSON.parse(fs.readFileSync(path.join(first.dir, 'workspace-baseline.json'), 'utf8')), 'the sweep compares against the first start');
   assert.equal(crashed.list().find((s) => s.swarmId === resumed.id).resumedFrom, first.id);
   await assert.rejects(crashed.resume(resumed.id), /still running/);
   const d2 = Date.now() + 5000;
@@ -371,6 +372,27 @@ test('a design swarm result lists its final screenshots', async (t) => {
   assert.equal(screenshots.length, 2);
   assert.ok(screenshots.every((p) => p.endsWith('-final.png')));
   assert.match(fs.readFileSync(path.join(swarm.dir, 'lead-prompt.md'), 'utf8'), /<screen>-<viewport>-final.png/);
+});
+
+test('the result lists files a swarm left untracked or ignored in the workspace since it started', async (t) => {
+  const repo = tempGitRepo();
+  fs.writeFileSync(path.join(repo, '.gitignore'), '.cache/\n.jest-cache/\n');
+  execFileSync('git', ['add', '.gitignore'], { cwd: repo });
+  execFileSync('git', ['commit', '-q', '-m', 'ignore'], { cwd: repo });
+  fs.mkdirSync(path.join(repo, '.cache'));
+  fs.writeFileSync(path.join(repo, 'notes-before.md'), 'the owner was here first\n');
+  const manager = new SwarmManager({ launch: fakeLaunch('normal') });
+  t.after(() => manager.shutdownAll());
+  const swarm = await manager.start({ objective: 'Make hello.txt', workspace: repo, isolate: false, max_agents: 1 });
+  assert.ok(fs.statSync(path.join(swarm.dir, 'scratch')).isDirectory(), 'the scratch directory exists before the Lead starts');
+  assert.ok(fs.readFileSync(path.join(swarm.dir, 'lead-prompt.md'), 'utf8').includes(`${path.join(swarm.dir, 'scratch').split(path.sep).join('/')}`));
+  await swarm.waitForAttention(5000);
+  fs.mkdirSync(path.join(repo, '.jest-cache', 'failproof'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.jest-cache', 'failproof', 'copy.test.js'), 'x');
+  fs.writeFileSync(path.join(repo, 'probe.test.js'), 'x');
+  const { git } = await swarm.result();
+  assert.deepEqual(git.newIgnored, ['.jest-cache/']);
+  assert.deepEqual(git.newUntracked, ['probe.test.js'], 'untracked files that were there at the start are not listed');
 });
 
 test('owner questions come back complete, numbered, and only from this run', async (t) => {
