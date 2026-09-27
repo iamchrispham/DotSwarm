@@ -24,8 +24,9 @@ export const TEAM_PROFILE_PACKAGE = '@deepseek-ai/dsh-experimental-agent-team-pr
 export const TEAM_PROFILE_VERSION = '0.1.5-alpha.2';
 
 export const DEFAULTS = Object.freeze({
-  provider: 'deepseek-official',
-  model: 'deepseek-v4-flash',
+  // Overridable for a harness profile routed to another endpoint, whose model ids differ.
+  provider: process.env.DOTSWARM_DEFAULT_PROVIDER?.trim() || 'deepseek-official',
+  model: process.env.DOTSWARM_DEFAULT_MODEL?.trim() || 'deepseek-v4-flash',
   // The only image-capable model the API currently lists; design swarms need read_image.
   visionModel: 'deepseek-flash',
   // build: implement a spec. brief: read sources and condense them for the coordinator.
