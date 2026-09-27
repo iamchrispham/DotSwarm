@@ -83,11 +83,20 @@ function foldEventLog(dir, rootSessionId) {
   return state;
 }
 
-/** Per-swarm patch layered over the profile: the findings ledger MCP server with literal paths. */
-function swarmPatch({ findingsFile, swarmId }) {
+/**
+ * Per-swarm patch layered over the profile: the findings ledger MCP server with literal paths, and
+ * the Agent Teams roster limit set to the swarm's teammate budget.
+ */
+function swarmPatch({ findingsFile, swarmId, maxAgents }) {
   const q = (s) => JSON.stringify(s);
   return [
-    '# Generated per swarm. Findings ledger MCP server for every team member.',
+    '# Generated per swarm. The runtime refuses spawn_teammate once the roster holds maxMembers',
+    '# teammates (the Lead is not on it; a failed spawn is). This config replaces the profile\'s,',
+    '# so its other limits take the package defaults, which the profile layer only repeats.',
+    '- id: agent-team',
+    '  config:',
+    `    maxMembers: ${maxAgents}`,
+    '# Findings ledger MCP server for every team member.',
     '- insert:',
     '    - id: mcp-findings',
     "      name: '@deepseek-ai/dsh-mcp-client'",
@@ -244,7 +253,7 @@ export class Swarm {
       await this.#loadSkills();
       this.persist();
       const patchFile = path.join(this.dir, 'swarm.patch.yml');
-      fs.writeFileSync(patchFile, swarmPatch({ findingsFile: this.findings.file, swarmId: this.id }));
+      fs.writeFileSync(patchFile, swarmPatch({ findingsFile: this.findings.file, swarmId: this.id, maxAgents: this.spec.maxAgents }));
       fs.writeFileSync(path.join(this.dir, 'spec.json'), JSON.stringify({ ...this.spec, workspace: this.workspace, branch: this.branch }, null, 2));
 
       this.client = this.launch({ swarm: this, patchFile });

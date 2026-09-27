@@ -130,7 +130,7 @@ Call `swarm_status` with `wait_ms` of 300000 to 600000 and `since_finding` set t
 - `idle`: call `swarm_result`.
 - `failed` with phase `idle`: the Lead's turn ended in a provider error, named in `error`. Fix the cause (a model or setting the provider rejects), then one `swarm_steer` retries; otherwise `swarm_stop`.
 - `failure.kind` `provider_rejected` in a status: the provider refused the Lead's request before the team spent a token, and `failure` names the HTTP status, the provider's message, and the model it was sent. The install is fine; do not reinstall. On 400 or 401 the model id or key is wrong for the configured endpoint: `swarm_stop`, then `swarm_start` again with a `model` it accepts. On 402 or 429, fix the balance or wait, then one `swarm_steer` retries.
-- `teammatesOverBudget` in a status: the Lead spawned more teammates than `max_agents`. Steer it to finish with the teammates it has.
+- `teammatesOverBudget` in a status: the team holds more teammates than `max_agents`, which the runtime normally refuses. Steer the Lead to finish with the teammates it has.
 - Two `timeout` wakes with no task movement: `swarm_inspect` `errors`, then steer or stop.
 
 Never edit files inside a running swarm's write scopes. Missing work becomes `swarm_task_add`, not your own edit.

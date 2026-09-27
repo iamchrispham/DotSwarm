@@ -31,6 +31,7 @@ test('start, observe, steer, result, stop against the fake runtime', async (t) =
   assert.match(swarm.id, /^sw-/);
   assert.ok(fs.existsSync(path.join(swarm.dir, 'lead-prompt.md')));
   assert.match(fs.readFileSync(path.join(swarm.dir, 'lead-prompt.md'), 'utf8'), /Use Agent Teams/);
+  assert.match(fs.readFileSync(path.join(swarm.dir, 'swarm.patch.yml'), 'utf8'), /^- id: agent-team\n {2}config:\n {4}maxMembers: 2$/m, 'the runtime is capped at max_agents teammates');
 
   const deadline = Date.now() + 5000;
   while (swarm.phase !== 'idle' && Date.now() < deadline) await swarm.waitForChange(500);
@@ -208,8 +209,9 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
   assert.equal(detached.inspect('member:worker').messages[0].text, 'worker done');
   await assert.rejects(detached.steer('x'), /detached/);
 
-  const resumed = await crashed.resume(first.id, { instruction: 'verify task-1 then finish', mode: 'refactor', design: true });
+  const resumed = await crashed.resume(first.id, { instruction: 'verify task-1 then finish', mode: 'refactor', design: true, maxAgents: 3 });
   assert.notEqual(resumed.id, first.id);
+  assert.match(fs.readFileSync(path.join(resumed.dir, 'swarm.patch.yml'), 'utf8'), /^ {4}maxMembers: 3$/m, 'a resume caps its new team at its own budget');
   assert.equal(resumed.spec.mode, 'refactor');
   assert.equal(resumed.spec.design, true);
   assert.equal(resumed.spec.model, 'deepseek-flash', 'a design continuation of a default-model swarm switches to the vision model');
