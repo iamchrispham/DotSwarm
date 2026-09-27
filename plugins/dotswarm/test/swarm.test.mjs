@@ -271,6 +271,10 @@ test('objective and context can come from files, one source each, capped like a 
   assert.throws(() => manager.normalizeSpec({ objective: 'x', context: 'y', context_file: contextFile, workspace: os.tmpdir() }), /context or context_file, not both/);
   assert.throws(() => manager.normalizeSpec({ objective_file: 'brief.md', workspace: os.tmpdir() }), /absolute path/);
   assert.throws(() => manager.normalizeSpec({ objective_file: path.join(dir, 'missing.md'), workspace: os.tmpdir() }), /objective_file cannot be read/);
+  assert.throws(() => manager.normalizeSpec({ objective_file: dir, workspace: os.tmpdir() }), /not a regular file/, 'a directory, pipe, or device is refused before it is read');
+  const dense = path.join(dir, 'dense.md');
+  fs.writeFileSync(dense, `${'x'.repeat(40)} `.repeat(20_000));
+  assert.equal(manager.normalizeSpec({ objective_file: dense, workspace: os.tmpdir() }).objective.length, 41 * 20_000 - 1, 'long words under the word cap are read');
   const long = path.join(dir, 'long.md');
   fs.writeFileSync(long, 'word '.repeat(30_001));
   assert.throws(() => manager.normalizeSpec({ objective_file: long, workspace: os.tmpdir() }), /30001 words; the cap is 30000/);

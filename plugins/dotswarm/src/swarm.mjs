@@ -811,8 +811,9 @@ export function defaultLaunch({ swarm, patchFile }) {
   });
 }
 
-// Reject a file far past the word cap before reading it; a word plus its space rarely tops this.
-const BRIEF_FILE_BYTES_PER_WORD = 16;
+// Refuse a file far past the word cap before reading it. Real briefs run about 8 bytes a word;
+// this leaves room for code-dense text while keeping a stray multi-gigabyte file out of memory.
+const BRIEF_FILE_BYTES_PER_WORD = 64;
 
 /**
  * An inline string, or the text of the absolute path in <key>_file, never both. A file keeps its
@@ -829,7 +830,10 @@ function inlineOrFile(input, key) {
   const cap = DEFAULTS.briefWordsCap;
   let text;
   try {
-    if (fs.statSync(filePath).size > cap * BRIEF_FILE_BYTES_PER_WORD) throw new Error(`larger than ${cap} words`);
+    const stat = fs.statSync(filePath);
+    // A pipe or device would block the synchronous read, and the whole server with it.
+    if (!stat.isFile()) throw new Error('not a regular file');
+    if (stat.size > cap * BRIEF_FILE_BYTES_PER_WORD) throw new Error(`${stat.size} bytes is too large for ${cap} words`);
     text = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
     throw new Error(`${key}_file cannot be read: ${error.message}`);
