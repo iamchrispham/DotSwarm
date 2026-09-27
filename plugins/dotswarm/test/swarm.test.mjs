@@ -177,6 +177,8 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
   while (first.phase !== 'idle' && Date.now() < deadline) await first.waitForChange(500);
   assert.equal((await first.result()).branch, first.branch);
   await first.stop();
+  // Left by the first team: a resume that took a fresh snapshot would count it as already there.
+  fs.writeFileSync(path.join(first.workspace, 'left-by-first-team.txt'), 'x');
   const saved = JSON.parse(fs.readFileSync(path.join(first.dir, 'state.json'), 'utf8'));
   assert.equal(saved.phase, 'stopped');
   assert.equal(saved.branch, first.branch);
@@ -238,6 +240,7 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
   const d2 = Date.now() + 5000;
   while (resumed.phase !== 'idle' && Date.now() < d2) await resumed.waitForChange(500);
   assert.equal(resumed.status().resumedFrom, first.id);
+  assert.ok((await resumed.result()).git.newUntracked.includes('left-by-first-team.txt'), 'the sweep spans the whole chain');
   await resumed.stop();
 });
 
