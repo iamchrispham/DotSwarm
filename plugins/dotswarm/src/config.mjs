@@ -28,7 +28,7 @@ export const DEFAULTS = Object.freeze({
   provider: process.env.DOTSWARM_DEFAULT_PROVIDER?.trim() || 'deepseek-official',
   model: process.env.DOTSWARM_DEFAULT_MODEL?.trim() || 'deepseek-v4-flash',
   // The only image-capable model the API currently lists; design swarms need read_image.
-  visionModel: 'deepseek-flash',
+  visionModel: process.env.DOTSWARM_VISION_MODEL?.trim() || 'deepseek-flash',
   // build: implement a spec. brief: read sources and condense them for the coordinator.
   // verify: run every check and fix mechanical defects. refactor: resolve an audit list.
   modes: ['build', 'brief', 'verify', 'refactor'],
