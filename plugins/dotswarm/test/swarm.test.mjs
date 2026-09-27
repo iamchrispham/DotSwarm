@@ -211,7 +211,8 @@ test('isolation defaults to a worktree for git repos, and swarms persist, detach
   assert.equal(detached.inspect('member:worker').messages[0].text, 'worker done');
   await assert.rejects(detached.steer('x'), /detached/);
 
-  const resumed = await crashed.resume(first.id, { instruction: 'verify task-1 then finish', mode: 'refactor', design: true, maxAgents: 3 });
+  await assert.rejects(crashed.resume(first.id, { maxAgents: 'abc' }), /max_agents must be a whole number/);
+  const resumed = await crashed.resume(first.id, { instruction: 'verify task-1 then finish', mode: 'refactor', design: true, maxAgents: 3.7 });
   assert.notEqual(resumed.id, first.id);
   assert.match(fs.readFileSync(path.join(resumed.dir, 'swarm.patch.yml'), 'utf8'), /^ {4}maxMembers: 3$/m, 'a resume caps its new team at its own budget');
   assert.equal(resumed.spec.mode, 'refactor');
@@ -245,6 +246,11 @@ test('spec validation', () => {
   assert.throws(() => manager.normalizeSpec({ workspace: os.tmpdir() }), /objective or objective_file is required/);
   assert.throws(() => manager.normalizeSpec({ objective: 'x', workspace: path.join(os.tmpdir(), 'nope-' + Date.now()) }), /does not exist/);
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_agents: 99 }).maxAgents, 7);
+  assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_agents: 2.5 }).maxAgents, 2, 'the runtime limit must be an integer');
+  assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_agents: '3' }).maxAgents, 3);
+  assert.throws(() => manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_agents: 'abc' }), /max_agents must be a whole number/);
+  assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_tokens: 2048.9 }).maxTokens, 2048);
+  assert.throws(() => manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), max_tokens: 'lots' }), /max_tokens must be a whole number/);
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), permission_mode: 'read-only' }).permissionMode, 'read-only');
   assert.equal(manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir(), permission_mode: 'bogus' }).permissionMode, 'danger-full-access');
   const plain = manager.normalizeSpec({ objective: 'x', workspace: os.tmpdir() });

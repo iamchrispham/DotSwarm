@@ -870,6 +870,18 @@ function inlineOrFile(input, key) {
   return text;
 }
 
+/**
+ * A whole-number tool argument: absent means the fallback, a number is floored and clamped, and
+ * anything else is refused. The MCP layer does not check schemas, and a fraction or NaN written
+ * into the runtime config stops the Agent Teams plugin from loading.
+ */
+function wholeNumber(name, value, { min, max = Infinity, fallback }) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) throw new Error(`${name} must be a whole number, got ${JSON.stringify(value)}`);
+  return Math.max(min, Math.min(n, max));
+}
+
 export class SwarmManager {
   constructor({ launch, dotbot } = {}) {
     this.swarms = new Map();
@@ -896,7 +908,7 @@ export class SwarmManager {
     if (!objective) throw new Error('objective or objective_file is required');
     const workspace = path.resolve(input.workspace || process.env.DOTSWARM_WORKSPACE || process.cwd());
     if (!fs.existsSync(workspace) || !fs.statSync(workspace).isDirectory()) throw new Error(`workspace does not exist: ${workspace}`);
-    const maxAgents = Math.max(1, Math.min(Number(input.max_agents ?? DEFAULTS.maxAgents) || DEFAULTS.maxAgents, DEFAULTS.maxAgentsCap));
+    const maxAgents = wholeNumber('max_agents', input.max_agents, { min: 1, max: DEFAULTS.maxAgentsCap, fallback: DEFAULTS.maxAgents });
     const mode = DEFAULTS.modes.includes(input.mode) ? input.mode : 'build';
     // Build and refactor swarms get their own worktree in a git repo. Brief swarms only read, and
     // verify swarms check and repair the coordinator's own checkout, so both work in place.
@@ -927,7 +939,7 @@ export class SwarmManager {
       provider: input.provider ? String(input.provider) : DEFAULTS.provider,
       model,
       reasoningEffort: input.reasoning_effort ? String(input.reasoning_effort) : undefined,
-      maxTokens: input.max_tokens ? Number(input.max_tokens) : undefined,
+      maxTokens: wholeNumber('max_tokens', input.max_tokens, { min: 1024, fallback: undefined }),
     };
   }
 
@@ -966,7 +978,7 @@ export class SwarmManager {
       // The previous worktree (or plain workspace) already holds the work; never create another.
       workspace: previous.workspace,
       isolate: false,
-      maxAgents: maxAgents ? Math.max(1, Math.min(Number(maxAgents), DEFAULTS.maxAgentsCap)) : previous.spec.maxAgents,
+      maxAgents: wholeNumber('max_agents', maxAgents ?? previous.spec.maxAgents, { min: 1, max: DEFAULTS.maxAgentsCap, fallback: DEFAULTS.maxAgents }),
       mode: DEFAULTS.modes.includes(mode) ? mode : (previous.spec.mode ?? 'build'),
       design: nextDesign,
       model: nextDesign && previous.spec.model === DEFAULTS.model ? DEFAULTS.visionModel : previous.spec.model,
