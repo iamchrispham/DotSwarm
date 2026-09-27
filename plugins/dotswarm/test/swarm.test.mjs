@@ -396,9 +396,10 @@ test('the result lists files a swarm left untracked or ignored in the workspace 
   fs.mkdirSync(path.join(repo, '.jest-cache', 'failproof'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.jest-cache', 'failproof', 'copy.test.js'), 'x');
   fs.writeFileSync(path.join(repo, 'probe.test.js'), 'x');
+  fs.writeFileSync(path.join(repo, ' lead.txt'), 'x');
   const { git } = await swarm.result();
   assert.deepEqual(git.newIgnored, ['.jest-cache/']);
-  assert.deepEqual(git.newUntracked, ['probe.test.js'], 'untracked files that were there at the start are not listed');
+  assert.deepEqual(git.newUntracked, [' lead.txt', 'probe.test.js'], 'untracked files that were there at the start are not listed, and names keep their spaces');
 });
 
 test('with allowed_paths the result lists every changed path outside them, as git reports it', async (t) => {

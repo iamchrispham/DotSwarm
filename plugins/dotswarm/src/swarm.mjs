@@ -21,7 +21,8 @@ function newId() {
 
 async function git(cwd, args) {
   const { stdout } = await execFileAsync('git', args, { cwd, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
-  return stdout.trim();
+  // A NUL-separated list is exact as printed: trimming would eat a path's leading or trailing space.
+  return args.includes('-z') ? stdout : stdout.trim();
 }
 
 async function isGitRepo(cwd) {
