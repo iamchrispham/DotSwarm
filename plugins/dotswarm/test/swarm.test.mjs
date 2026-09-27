@@ -7,6 +7,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 process.env.DOTSWARM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'dotswarm-swarm-test-'));
+// These tests pin the built-in defaults; a machine that exports its own must not change them.
+for (const name of ['DOTSWARM_DEFAULT_MODEL', 'DOTSWARM_DEFAULT_PROVIDER', 'DOTSWARM_VISION_MODEL']) delete process.env[name];
 const { SwarmManager, attentionReason, providerRejection } = await import('../src/swarm.mjs');
 const { DshClient } = await import('../src/dsh-client.mjs');
 const fake = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-dsh.mjs');
