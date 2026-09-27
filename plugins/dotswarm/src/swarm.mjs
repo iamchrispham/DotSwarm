@@ -205,6 +205,7 @@ export function attentionReason({ phase, error, newFindings, openQuestionIds, kn
 // HTTP statuses a provider returns when it refuses the request itself: an unknown model id or a
 // malformed request, a bad key, no balance, a rate limit.
 const PROVIDER_REJECTIONS = new Set([400, 401, 402, 429]);
+const PROVIDER_ERROR_CAP = 500; // status.error carries up to 1,500 characters; events.jsonl keeps all of it
 
 /**
  * The provider refused the Lead's request before the team spent a single token, so nothing ran:
@@ -213,7 +214,7 @@ const PROVIDER_REJECTIONS = new Set([400, 401, 402, 429]);
 export function providerRejection({ failure, tokens, model, provider }) {
   if (!failure || !PROVIDER_REJECTIONS.has(failure.status)) return null;
   if (tokens.input + tokens.output + tokens.cacheRead > 0) return null;
-  return { kind: 'provider_rejected', httpStatus: failure.status, providerError: failure.message ?? null, model, provider };
+  return { kind: 'provider_rejected', httpStatus: failure.status, providerError: failure.message ? String(failure.message).slice(0, PROVIDER_ERROR_CAP) : null, model, provider };
 }
 
 export class Swarm {

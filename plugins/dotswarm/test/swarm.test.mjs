@@ -147,6 +147,8 @@ test('providerRejection names only a refused request that spent no tokens', () =
   assert.equal(providerRejection({ failure: { ...quota, status: 500 }, tokens: zero, ...spec }), null, 'a server error is not a rejection');
   assert.equal(providerRejection({ failure: quota, tokens: { ...zero, input: 10 }, ...spec }), null, 'a run that already spent tokens was not rejected up front');
   assert.equal(providerRejection({ failure: null, tokens: zero, ...spec }), null);
+  const dump = providerRejection({ failure: { ...quota, status: 400, message: 'x'.repeat(5000) }, tokens: zero, ...spec });
+  assert.equal(dump.providerError.length, 500, 'a long provider dump does not flood the compressed status');
 });
 
 function tempGitRepo() {
